@@ -56,11 +56,14 @@ async def drain(worker: CaptionWorker, expected: int, timeout: float = 5.0) -> l
     """Run the publisher until ``expected`` messages are queued for the gateway."""
     task = asyncio.create_task(worker._publisher())
     out: list[dict] = []
+
+    async def collect() -> None:
+        while len(out) < expected:
+            out.append(await worker._outbox.get())
+            worker._outbox.task_done()
+
     try:
-        async with asyncio.timeout(timeout):
-            while len(out) < expected:
-                out.append(await worker._outbox.get())
-                worker._outbox.task_done()
+        await asyncio.wait_for(collect(), timeout)  # asyncio.timeout() needs 3.11
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
