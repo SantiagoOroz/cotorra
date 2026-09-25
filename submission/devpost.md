@@ -184,12 +184,12 @@ Nine issues are open, six of them tagged `good first issue`.
 
 ## Checklist antes de enviar
 
-- [ ] Repo público, con licencia Apache 2.0 visible
+- [x] Repo público, con licencia Apache 2.0 visible
 - [ ] README con Quick Start que funcione tal cual está escrito
 - [ ] Video de 1–2 min subido a YouTube, link puesto
 - [ ] Subtítulos en inglés del video, **generados con Cotorra**
 - [x] Los placeholders `TU-USUARIO` reemplazados en README, README.en y CONTRIBUTING
-- [ ] `scripts/seed_issues.py` ejecutado (9 issues, 7 labels)
+- [x] `scripts/seed_issues.py` ejecutado (9 issues, 7 labels)
 - [ ] El badge de tests dice el número real
 - [ ] `docker compose up` probado en una máquina limpia
 - [ ] Enviado **antes** del 25 de septiembre, 15:00 UTC (12:00 🇦🇷)
