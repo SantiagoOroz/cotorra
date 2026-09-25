@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotorra · Producción</title>
+<meta name="color-scheme" content="dark light">
+<link rel="stylesheet" href="/static/cotorra.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎛️</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true">🦜</span> Cotorra <small>producción</small></a>
+  <span class="dot idle" id="link"></span>
+  <span class="title" id="linktext">conectando…</span>
+  <span class="spacer"></span>
+  <button id="theme" aria-label="Cambiar tema">◐</button>
+</header>
+
+<main class="wrap">
+  <div id="authbanner"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th></th><th>Escenario</th><th>Motor</th><th>Audio</th>
+          <th class="num">Latencia p50 / p95</th><th class="num">Líneas</th>
+          <th class="num">Uptime</th><th class="num">Público</th><th class="num">US$</th>
+          <th>Última línea</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="alerts"></div>
+
+  <footer>
+    <p>
+      Semáforo: <span class="badge good">verde</span> transmitiendo ·
+      <span class="badge warn">amarillo</span> degradado (sin audio, errores de API, reintentando) ·
+      <span class="badge bad">rojo</span> caído.
+      Los workers caídos se reinician solos; después de 5 intentos quedan en rojo.
+    </p>
+    <p>
+      Métricas Prometheus en <a href="/metrics">/metrics</a> · API en <a href="/docs">/docs</a> ·
+      el token de admin se pasa como <code>?token=…</code> en esta URL.
+    </p>
+  </footer>
+</main>
+
+<script type="module">
+import { qs, el, params, wsURL, Socket, initTheme, fmtAgo, fmtDur } from "/static/cotorra.js";
+
+initTheme();
+
+const token = params.get("token") || "";
+// The fire-drill button crashes a worker on purpose. Hidden unless asked for,
+// so nobody hits it by accident in the middle of a keynote.
+const drills = params.get("simulacro") === "1";
+const previews = new Map();   // session id -> last caption text
+const sessions = new Map();
+
+const STATE_ES = { running: "EN VIVO", starting: "INICIANDO", degraded: "DEGRADADO", error: "ERROR", idle: "SIN INICIAR", stopped: "DETENIDA", finished: "TERMINADA" };
+const TONE = { running: "good", starting: "", degraded: "warn", error: "bad", idle: "", stopped: "", finished: "" };
+
+/* --- actions ---------------------------------------------------------- */
+
+async function act(id, action) {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    headers: token ? { "X-Cotorra-Token": token } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    alert(`No se pudo ${action}: ${body.detail}`);
+  }
+}
+
+function copy(text, label) {
+  navigator.clipboard?.writeText(text).then(
+    () => toast(`Copiado: ${label}`),
+    () => prompt("Copiá esta URL:", text)
+  );
+}
+
+function toast(msg) {
+  const t = el("div", { class: "banner info", text: msg });
+  qs("#alerts").prepend(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+/* --- rendering -------------------------------------------------------- */
+
+function kpis() {
+  const all = [...sessions.values()];
+  const live = all.filter((s) => s.state === "running").length;
+  const bad = all.filter((s) => s.state === "error").length;
+  const warn = all.filter((s) => s.state === "degraded").length;
+  const viewers = all.reduce((a, s) => a + (s.viewers || 0), 0);
+  const cost = all.reduce((a, s) => a + (s.metrics.cost_usd || 0), 0);
+  const audio = all.reduce((a, s) => a + (s.metrics.audio_seconds || 0), 0);
+  const lats = all.filter((s) => s.state === "running" && s.metrics.latency_p95_ms).map((s) => s.metrics.latency_p95_ms);
+  const worst = lats.length ? Math.max(...lats) : 0;
+  const demo = all.some((s) => s.spec.engine === "mock");
+
+  const card = (v, k, cls = "") => el("div", { class: `kpi ${cls}` }, el("div", { class: "v", text: v }), el("div", { class: "k", text: k }));
+
+  qs("#kpis").replaceChildren(
+    card(`${live}/${all.length}`, "escenarios en vivo", live === all.length ? "" : warn || bad ? "warn" : ""),
+    card(String(bad + warn), "con alertas", bad ? "bad" : warn ? "warn" : ""),
+    card(worst ? `${worst} ms` : "—", "peor p95", worst > 3000 ? "bad" : worst > 1800 ? "warn" : ""),
+    card(String(viewers), "personas leyendo"),
+    card(fmtDur(audio), "audio procesado"),
+    card(`$${cost.toFixed(2)}`, demo ? "costo estimado (demo)" : "costo del evento"),
+  );
+}
+
+function row(s) {
+  const id = s.spec.id;
+  const m = s.metrics;
+  const live = ["running", "degraded", "starting"].includes(s.state);
+  const level = Math.min(1, (m.audio_level || 0) * 12);
+  const p50 = m.latency_p50_ms, p95 = m.latency_p95_ms;
+  const latTone = p95 > 3000 ? "bad" : p95 > 1800 ? "warn" : p95 ? "good" : "";
+  const viewerURL = `${location.origin}/viewer?session=${encodeURIComponent(id)}&lang=${s.spec.targets[0] || "es"}`;
+  const overlayURL = `${location.origin}/overlay?session=${encodeURIComponent(id)}&lang=${s.spec.targets[0] || "es"}`;
+  const screenURL = `${location.origin}/overlay?session=${encodeURIComponent(id)}&lang=${s.spec.targets[0] || "es"}&bg=000&lines=3&size=64&qr=1&title=1`;
+
+  return el("tr", { class: `state-${s.state}` },
+    el("td", {}, el("span", { class: `dot ${s.state}`, title: STATE_ES[s.state] })),
+    el("td", {},
+      el("div", { class: "row" },
+        el("strong", { text: s.spec.stage || id }),
+        el("span", { class: `badge ${TONE[s.state]}`, text: STATE_ES[s.state] || s.state }),
+        el("span", { class: "badge", text: `${s.spec.source_lang} → ${s.spec.targets.join(", ")}` }),
+      ),
+      el("div", { class: "preview", text: s.spec.title, title: s.spec.title }),
+    ),
+    el("td", {}, el("span", { class: "badge" + (s.spec.engine === "mock" ? " warn" : ""), text: s.spec.engine })),
+    el("td", {},
+      el("div", { class: "meter" + (live && level < 0.03 ? " quiet" : ""), title: `nivel ${(m.audio_level || 0).toFixed(3)}` },
+        el("i", { style: `width:${Math.round(level * 100)}%` })),
+    ),
+    el("td", { class: "num" }, el("span", { class: `badge ${latTone}`, text: p95 ? `${p50} / ${p95} ms` : "—" })),
+    el("td", { class: "num", text: String(m.captions) }),
+    el("td", { class: "num", text: s.started_at && live ? fmtAgo(s.started_at) : "—" }),
+    el("td", { class: "num", text: String(s.viewers || 0) }),
+    el("td", { class: "num", text: `$${(m.cost_usd || 0).toFixed(3)}` }),
+    el("td", { class: "preview", text: previews.get(id) || "", title: previews.get(id) || "" }),
+    el("td", { class: "actions" },
+      el("div", { class: "row" },
+        live
+          ? el("button", { class: "danger", text: "Detener", onclick: () => act(id, "stop") })
+          : el("button", { text: "Iniciar", onclick: () => act(id, "start") }),
+        el("a", { class: "btn", href: viewerURL, target: "_blank", rel: "noopener", title: "Abrir la vista de audiencia" }, "👁"),
+        el("button", { title: "Copiar la URL del overlay para vMix / OBS", onclick: () => copy(overlayURL, "overlay " + id) }, "vMix"),
+        el("a", { class: "btn", href: screenURL, target: "_blank", rel: "noopener", title: "Pantalla del escenario: subtítulos grandes + QR" }, "📺"),
+        drills && live
+          ? el("button", { class: "danger", title: "Simulacro: tirar el worker a la fuerza y ver cómo se recupera solo", onclick: () => act(id, "drill") }, "💥")
+          : null,
+        el("a", { class: "btn", href: `/api/sessions/${encodeURIComponent(id)}/transcript?lang=${s.spec.targets[0] || "es"}&format=srt`, title: "Descargar SRT" }, "⇩"),
+      ),
+    ),
+  );
+}
+
+function render() {
+  const all = [...sessions.values()].sort((a, b) =>
+    (a.spec.stage || a.spec.id).localeCompare(b.spec.stage || b.spec.id));
+  qs("#rows").replaceChildren(...all.map(row));
+  kpis();
+
+  const problems = all.filter((s) => s.last_error && ["error", "degraded"].includes(s.state));
+  qs("#alerts").replaceChildren(...problems.map((s) =>
+    el("div", { class: `banner ${s.state === "error" ? "error" : "demo"}` },
+      el("strong", { text: (s.spec.stage || s.spec.id) + ": " }), s.last_error)));
+}
+
+/* --- live feed -------------------------------------------------------- */
+
+const sock = new Socket(wsURL(`/ws/ops${token ? `?token=${encodeURIComponent(token)}` : ""}`));
+
+sock.addEventListener("snapshot", (e) => {
+  sessions.clear();
+  for (const s of e.detail.sessions) sessions.set(s.spec.id, s);
+  render();
+});
+sock.addEventListener("status", (e) => {
+  sessions.set(e.detail.status.spec.id, e.detail.status);
+  render();
+});
+sock.addEventListener("preview", (e) => {
+  previews.set(e.detail.session_id, e.detail.text);
+  render();
+});
+sock.addEventListener("state", (e) => {
+  const open = e.detail === "open";
+  qs("#link").className = `dot ${open ? "running" : "error"}`;
+  qs("#linktext").textContent = open ? "conectado al gateway" : "reconectando al gateway…";
+});
+
+fetch("/api/config").then((r) => r.json()).then((cfg) => {
+  if (!cfg.auth_required) {
+    qs("#authbanner").replaceChildren(el("div", { class: "banner demo" },
+      "ADMIN_TOKEN está vacío: cualquiera en esta red puede iniciar y detener sesiones. Configuralo antes de abrir las puertas."));
+  } else if (!token) {
+    qs("#authbanner").replaceChildren(el("div", { class: "banner info" },
+      "Este panel es de solo lectura. Agregá ?token=TU_ADMIN_TOKEN a la URL para poder operar."));
+  }
+});
+</script>
+</body>
+</html>

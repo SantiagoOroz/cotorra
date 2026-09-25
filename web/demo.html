@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotorra · demo</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦜</text></svg>">
+<!--
+  Demo page: a real talk with Cotorra's live captions burned on top, the way a
+  stream looks with the overlay loaded in vMix or OBS.
+
+    /demo?session=stage-mcp&lang=es&token=ADMIN_TOKEN
+
+  Shows the talk's video when there is one next to its audio file, otherwise
+  the talk's audio with its thumbnail (python scripts/fetch_samples.py).
+
+  Sync is automatic and honest. Start restarts the session from the top; the
+  worker's first heartbeat reports exactly how many seconds of audio it has
+  consumed, and playback is seeked to that position. From then on what you
+  hear and what Cotorra processes share one clock, so the gap between the
+  speaker and the subtitle IS the latency. Nothing is pre-rendered.
+
+  Params:  session  lang  token
+           also=0    hide the original-language line
+           label=0   hide the "live" label
+  Keys:    F  fullscreen      R  restart from the top
+-->
+<style>
+  /* No color-scheme here on purpose: when an embedding page and an iframe
+     declare different color schemes, Chrome paints the iframe opaque, and the
+     caption overlays would cover the talk with a white sheet. */
+  html, body {
+    margin: 0; height: 100%;
+    background: #000; color: #fff;
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #frame {
+    position: absolute; inset: 0; margin: auto;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    background: #000;
+    overflow: hidden;
+  }
+  video, #poster {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover; display: block;
+  }
+  #poster { display: none; filter: brightness(.62) saturate(.9); }
+  iframe {
+    position: absolute; left: 0; right: 0; top: 0;
+    width: 100%; border: 0; background: transparent;
+    pointer-events: none;
+    /* Must match the overlay document's own scheme, or Chrome paints the
+       iframe opaque and the talk disappears behind a white sheet. */
+    color-scheme: normal;
+  }
+  #label {
+    position: absolute; top: 3%; left: 2.5%;
+    display: none;
+    padding: .55em .85em;
+    border-radius: .5em;
+    background: rgba(0, 0, 0, .62);
+    font-size: clamp(11px, 1.9vh, 22px);
+    line-height: 1.35;
+  }
+  #label .live { color: #ff5f5f; font-weight: 800; letter-spacing: .06em; }
+  #label .live::before { content: "● "; }
+  #label small { display: block; color: rgba(255, 255, 255, .78); font-weight: 500; }
+  #meter { display: flex; gap: 3px; align-items: flex-end; height: 1.2em; margin-top: .35em; }
+  #meter i { width: 5px; background: #3ddc97; border-radius: 2px; height: 10%; transition: height .08s linear; }
+  #cover {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    background: radial-gradient(ellipse at center, #10202a 0%, #000 72%);
+    z-index: 5;
+  }
+  .card { max-width: 640px; padding: 32px; text-align: center; }
+  .card h1 { font-size: clamp(20px, 3.4vh, 34px); margin: .2em 0 .4em; letter-spacing: -.01em; }
+  .card p { color: #b9c4d0; line-height: 1.55; margin: .4em 0; }
+  .card kbd {
+    font: 600 .85em ui-monospace, monospace;
+    border: 1px solid #3a4656; border-radius: 4px; padding: 1px 6px; color: #dfe6ee;
+  }
+  button#go {
+    margin-top: 22px;
+    font: 700 clamp(16px, 2.4vh, 24px) inherit;
+    color: #05140d; background: #3ddc97;
+    border: 0; border-radius: 12px;
+    padding: .7em 1.6em; cursor: pointer;
+  }
+  button#go:disabled { opacity: .55; cursor: progress; }
+  .err { color: #ff8a8a; }
+  body.recording, body.recording * { cursor: none !important; }
+</style>
+</head>
+<body>
+<div id="frame">
+  <img id="poster" alt="">
+  <video id="video" playsinline preload="auto"></video>
+  <audio id="audio" preload="auto"></audio>
+  <iframe id="orig" title="Subtítulos, idioma original"></iframe>
+  <iframe id="main" title="Subtítulos traducidos"></iframe>
+  <div id="label">
+    <span class="live">EN VIVO</span>
+    <small id="labeltext">Subtítulos generados por Cotorra</small>
+    <small id="lat"></small>
+    <div id="meter" aria-hidden="true"></div>
+  </div>
+  <div id="cover">
+    <div class="card">
+      <div style="font-size:48px">🦜</div>
+      <h1 id="talk">Cotorra · demo</h1>
+      <p>La charla real, con los subtítulos que Cotorra genera en vivo planchados encima — como se vería en la transmisión.</p>
+      <p><kbd>F</kbd> pantalla completa · <kbd>R</kbd> reiniciar desde el principio</p>
+      <button id="go">▶ Empezar</button>
+      <p id="status" aria-live="polite"></p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { params, wsURL, langLabel } from "/static/cotorra.js";
+
+const session = params.get("session") || "stage-mcp";
+const lang = params.get("lang") || "es";
+const token = params.get("token") || "";
+const showOrig = params.get("also") !== "0";
+const auth = token ? { "X-Cotorra-Token": token } : {};
+const tokenQS = token ? `&token=${encodeURIComponent(token)}` : "";
+const $ = (id) => document.getElementById(id);
+
+let player = null;        // the <video> or the <audio>, whichever we have
+let spec = null;
+let ws = null;
+let analyser = null;
+
+function say(msg, isError = false) {
+  $("status").textContent = msg;
+  $("status").className = isError ? "err" : "";
+}
+
+async function api(path, method = "GET") {
+  const res = await fetch(path, { method, headers: auth });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(`${res.status}: ${body.detail}`);
+  }
+  return res.json();
+}
+
+/* --- setup ------------------------------------------------------------ */
+
+async function init() {
+  try {
+    spec = (await api(`/api/sessions/${encodeURIComponent(session)}`)).spec;
+  } catch {
+    say(`No existe la sesión "${session}". ¿Levantaste Cotorra con MANIFEST=demo.yaml?`, true);
+    $("go").disabled = true;
+    return;
+  }
+  $("talk").textContent = spec.title;
+  $("labeltext").textContent =
+    `Subtítulos generados en vivo por Cotorra · ${langLabel(spec.source_lang)} → ${langLabel(lang)}`;
+
+  let preview;
+  try {
+    preview = await api(`/api/sessions/${encodeURIComponent(session)}/preview`);
+  } catch (e) {
+    say(e.message.startsWith("401")
+      ? "Falta el token de admin en la URL: agregá &token=… (el mismo ADMIN_TOKEN con el que levantaste Cotorra)."
+      : `No hay audio local para esta sesión (${e.message}).`, true);
+    $("go").disabled = true;
+    return;
+  }
+
+  if (preview.kind === "video") {
+    player = $("video");
+  } else {
+    // No video: the talk's own audio, with its thumbnail. Same file Cotorra
+    // is transcribing, so the sync is exact by construction.
+    player = $("audio");
+    $("video").style.display = "none";
+    if (preview.poster) {
+      $("poster").src = preview.poster + tokenQS;
+      $("poster").style.display = "block";
+    }
+  }
+  player.src = preview.media + tokenQS;
+  player.addEventListener("error", () => say("No pude cargar el audio/video de la charla.", true), { once: true });
+}
+
+/* --- captions ----------------------------------------------------------- */
+
+function overlaySrc(language, lines, size) {
+  return `/overlay?session=${encodeURIComponent(session)}&lang=${encodeURIComponent(language)}` +
+         `&lines=${lines}&size=${size}&partials=1&box=1`;
+}
+
+function placeCaptions() {
+  const h = $("frame").clientHeight;
+  const size = Math.max(18, Math.round(h / 21));
+  $("main").style.height = "100%";
+  $("main").src = overlaySrc(lang, 2, size);
+  if (showOrig && spec && spec.source_lang !== "auto" && spec.source_lang !== lang) {
+    // The original goes at the top, the translation at the bottom — the usual
+    // layout for bilingual broadcasts, and one that cannot collide however
+    // many lines the translation wraps to. One frame, both requirements: the
+    // transcript and its translation.
+    $("orig").style.top = `${Math.round(h * 0.15)}px`;
+    $("orig").style.height = `${Math.round(h * 0.3)}px`;
+    $("orig").src = overlaySrc(spec.source_lang, 1, Math.round(size * 0.72)) + "&align=top";
+  }
+}
+
+/* --- sync --------------------------------------------------------------- */
+
+function waitForAudio(timeoutMs = 20000) {
+  // The socket is opened after the restart, so every status on it belongs to
+  // the new worker. Its first heartbeat says how far into the file it is.
+  return new Promise((resolve, reject) => {
+    ws?.close();
+    ws = new WebSocket(wsURL(`/ws/captions/${encodeURIComponent(session)}?lang=${encodeURIComponent(lang)}`));
+    let done = false;
+    const timer = setTimeout(() => reject(new Error("No llega audio al worker. Mirá el panel /ops.")), timeoutMs);
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.type !== "status") return;
+      showLatency(m.status.metrics);
+      const secs = m.status.metrics?.audio_seconds || 0;
+      if (secs > 0 && !done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(secs);
+      }
+    };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error("No pude conectarme al gateway.")); };
+  });
+}
+
+function showLatency(metrics) {
+  const ms = metrics?.last_latency_ms;
+  if (ms) $("lat").textContent = `latencia del modelo: ${(ms / 1000).toFixed(1).replace(".", ",")} s`;
+}
+
+/* --- a live level meter, so a still picture still looks alive --------- */
+
+function startMeter() {
+  if (analyser || !player) return;
+  try {
+    const ctx = new AudioContext();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    ctx.createMediaElementSource(player).connect(analyser);
+    analyser.connect(ctx.destination);
+  } catch { return; }
+  const bars = Array.from({ length: 14 }, () => document.createElement("i"));
+  $("meter").replaceChildren(...bars);
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  const tick = () => {
+    analyser.getByteFrequencyData(data);
+    bars.forEach((bar, i) => {
+      const v = data[2 + i * 3] / 255;
+      bar.style.height = `${Math.max(8, v * 100)}%`;
+    });
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+/* --- the one button ------------------------------------------------------ */
+
+async function start() {
+  $("go").disabled = true;
+  player?.pause();
+  $("main").src = "about:blank";
+  $("orig").src = "about:blank";
+  try {
+    say("Reiniciando la sesión desde el principio…");
+    await api(`/api/sessions/${encodeURIComponent(session)}/stop`, "POST");
+    await api(`/api/sessions/${encodeURIComponent(session)}/start?reset=true`, "POST");
+    say("Esperando que Cotorra empiece a escuchar…");
+    const secs = await waitForAudio();
+
+    startMeter();
+    // Seek to where the worker's audio is right now. The small lead covers
+    // the time the media element takes to start playing.
+    player.currentTime = (secs + 0.25) % (player.duration || Infinity);
+    await player.play();
+
+    placeCaptions();
+    $("cover").style.display = "none";
+    if (params.get("label") !== "0") $("label").style.display = "block";
+    armCursorHiding();
+  } catch (e) {
+    say(e.message.startsWith("401")
+      ? "Falta el token de admin en la URL: agregá &token=…"
+      : e.message, true);
+    $("go").disabled = false;
+  }
+}
+
+/* --- recording niceties ------------------------------------------------ */
+
+let idle;
+function armCursorHiding() {
+  const wake = () => {
+    document.body.classList.remove("recording");
+    clearTimeout(idle);
+    idle = setTimeout(() => document.body.classList.add("recording"), 1500);
+  };
+  addEventListener("mousemove", wake);
+  wake();
+}
+
+addEventListener("keydown", (e) => {
+  if (e.key === "f" || e.key === "F") {
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  }
+  if (e.key === "r" || e.key === "R") {
+    $("cover").style.display = "grid";
+    $("label").style.display = "none";
+    start();
+  }
+});
+
+addEventListener("resize", () => {
+  if ($("cover").style.display === "none") placeCaptions();
+});
+
+$("go").addEventListener("click", start);
+init();
+</script>
+</body>
+</html>

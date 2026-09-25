@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cotorra · Subtítulos</title>
+<meta name="color-scheme" content="dark light">
+<link rel="stylesheet" href="/static/cotorra.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦜</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true">🦜</span></a>
+  <span class="dot idle" id="dot" role="img" aria-label="estado de la conexión"></span>
+  <span class="title" id="title">Conectando…</span>
+  <span class="badge" id="latency" title="Retraso entre lo que se dice y lo que leés">—</span>
+</header>
+
+<main class="wrap stage">
+  <div id="banner"></div>
+  <div class="columns" id="columns">
+    <section class="column" id="col-main">
+      <h2 id="label-main">—</h2>
+      <!-- role=log + aria-live=polite: screen readers announce new captions
+           without interrupting; this page is itself an accessibility tool. -->
+      <div class="lines" id="lines-main" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <p class="empty" id="empty">Esperando audio…</p>
+    </section>
+    <section class="column" id="col-alt" hidden>
+      <h2 id="label-alt">—</h2>
+      <div class="lines" id="lines-alt" role="log" aria-live="off"></div>
+    </section>
+  </div>
+</main>
+
+<div class="dock">
+  <div class="inner">
+    <div class="pills" id="langs" role="group" aria-label="Idioma de los subtítulos"></div>
+    <span class="spacer"></span>
+    <button id="dual" aria-pressed="false" title="Mostrar el idioma original al lado">⇄ Bilingüe</button>
+    <button id="smaller" aria-label="Achicar el texto">A−</button>
+    <button id="bigger" aria-label="Agrandar el texto">A+</button>
+    <button id="theme" aria-label="Cambiar tema">◐</button>
+    <a class="btn" id="download" href="#" title="Descargar la transcripción completa">⇩ SRT</a>
+  </div>
+</div>
+
+<script type="module">
+import { qs, el, params, wsURL, Socket, CaptionList, autoScroller, initTheme, initFontSize, langLabel } from "/static/cotorra.js";
+
+const sessionId = params.get("session");
+if (!sessionId) location.replace("/");
+
+let lang = params.get("lang") || localStorage.getItem("cotorra-lang") || "es";
+let altLang = null;
+let dual = localStorage.getItem("cotorra-dual") === "1";
+
+initTheme();
+initFontSize("#smaller", "#bigger");
+
+const scroller = autoScroller();
+const main = new CaptionList(qs("#lines-main"), { onAppend: () => { qs("#empty").hidden = true; scroller.follow(); } });
+const alt = new CaptionList(qs("#lines-alt"));
+
+let mainSock = null, altSock = null, spec = null;
+
+/* --- connection ------------------------------------------------------- */
+
+function connect(language, list, isMain) {
+  const sock = new Socket(wsURL(`/ws/captions/${encodeURIComponent(sessionId)}?lang=${encodeURIComponent(language)}`));
+
+  sock.addEventListener("hello", (e) => {
+    const d = e.detail;
+    spec = d.session.spec;
+    if (isMain) {
+      qs("#title").textContent = spec.title + (spec.stage ? ` · ${spec.stage}` : "");
+      document.title = `${spec.title} · Cotorra`;
+      renderLangs(d.session);
+      applyState(d.session.state);
+      list.clear();
+      d.backlog.forEach((c) => list.add(c));
+    } else {
+      list.clear();
+      d.backlog.forEach((c) => list.add(c));
+    }
+  });
+
+  sock.addEventListener("caption", (e) => {
+    list.add(e.detail);
+    if (isMain) {
+      const ms = e.detail.latency_ms;
+      const badge = qs("#latency");
+      badge.textContent = `${ms} ms`;
+      badge.className = "badge " + (ms < 1500 ? "good" : ms < 3000 ? "warn" : "bad");
+      if (e.detail.demo) showDemoBanner();
+    }
+  });
+
+  if (isMain) {
+    sock.addEventListener("status", (e) => applyState(e.detail.status.state));
+    sock.addEventListener("state", (e) => {
+      if (e.detail === "closed") {
+        qs("#dot").className = "dot error";
+        qs("#latency").textContent = "sin conexión";
+        qs("#latency").className = "badge bad";
+      }
+    });
+  }
+  return sock;
+}
+
+const STATE_ES = { running: "en vivo", starting: "conectando", degraded: "con problemas", error: "error", idle: "sin iniciar", stopped: "detenida", finished: "terminada" };
+
+function applyState(state) {
+  qs("#dot").className = `dot ${state}`;
+  qs("#dot").setAttribute("aria-label", STATE_ES[state] || state);
+  if (state === "finished") qs("#empty").textContent = "La charla terminó. Podés descargar la transcripción completa.";
+  if (state === "error") qs("#empty").textContent = "La sesión tiene un problema. El equipo de producción ya lo ve en su panel.";
+}
+
+function showDemoBanner() {
+  if (qs("#banner").childElementCount) return;
+  qs("#banner").replaceChildren(el("div", { class: "banner demo" },
+    "⚠︎ Modo demo: texto de ejemplo, no transcripción real del audio."));
+}
+
+/* --- languages -------------------------------------------------------- */
+
+function renderLangs(session) {
+  const s = session.spec;
+  const all = [...new Set([...(s.source_lang !== "auto" ? [s.source_lang] : []), ...s.targets])];
+  if (!all.includes(lang)) lang = all[0] || "es";
+  altLang = all.find((l) => l !== lang) || null;
+
+  qs("#langs").replaceChildren(...all.map((code) =>
+    el("button", {
+      class: "pill",
+      "aria-pressed": String(code === lang),
+      text: langLabel(code),
+      onclick: () => switchLang(code),
+    })
+  ));
+  qs("#label-main").textContent = langLabel(lang);
+  qs("#label-alt").textContent = altLang ? langLabel(altLang) : "";
+  qs("#download").href = `/api/sessions/${encodeURIComponent(sessionId)}/transcript?lang=${lang}&format=srt`;
+  applyDual();
+}
+
+function switchLang(code) {
+  if (code === lang) return;
+  lang = code;
+  localStorage.setItem("cotorra-lang", code);
+  history.replaceState(null, "", `?session=${encodeURIComponent(sessionId)}&lang=${code}`);
+  mainSock?.close();
+  main.clear();
+  qs("#empty").hidden = false;
+  mainSock = connect(lang, main, true);
+  if (dual) restartAlt();
+}
+
+function applyDual() {
+  qs("#columns").classList.toggle("dual", dual && !!altLang);
+  qs("#col-alt").hidden = !(dual && altLang);
+  qs("#dual").setAttribute("aria-pressed", String(dual));
+  if (dual && altLang) restartAlt();
+  else { altSock?.close(); altSock = null; alt.clear(); }
+}
+
+function restartAlt() {
+  altSock?.close();
+  alt.clear();
+  qs("#label-alt").textContent = langLabel(altLang);
+  altSock = connect(altLang, alt, false);
+}
+
+qs("#dual").addEventListener("click", () => {
+  dual = !dual;
+  localStorage.setItem("cotorra-dual", dual ? "1" : "0");
+  applyDual();
+});
+
+mainSock = connect(lang, main, true);
+addEventListener("beforeunload", () => { mainSock?.close(); altSock?.close(); });
+</script>
+</body>
+</html>

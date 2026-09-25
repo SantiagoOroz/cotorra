@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotorra overlay</title>
+<!--
+  Transparent caption overlay for OBS / vMix / Streamlabs.
+
+  Add a Browser Source with this URL and the captions burn into the stream:
+
+    http://localhost:8080/overlay?session=stage-red&lang=es
+
+  Query parameters:
+    session   required, the session id
+    lang      caption language (default es)
+    lines     how many lines to keep on screen (default 2)
+    size      font size in px (default 42)
+    align     bottom | top | center (default bottom)
+    box       1 to draw the semi-transparent plate behind the text (default 1)
+    shadow    1 for a text shadow instead of the plate (default 0)
+    font      any font family installed on the streaming machine
+    partials  1 to show interim words as they are spoken (default 1)
+    bg        solid background colour (hex, no #) — turns this into a stage
+              screen for a projector or TV instead of a stream overlay
+    qr        1 to show a QR in the corner so people follow on their phone
+    title     1 to show the talk title in the corner
+
+  The page has a transparent background by default, so nothing but the text
+  is composited over your video. Set OBS "Shutdown source when not visible"
+  OFF so the websocket stays connected between scenes.
+
+  Stage screen (the TV in front of the stage):
+    /overlay?session=X&lang=es&bg=000&lines=3&size=64&qr=1&title=1
+-->
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow: hidden;
+    height: 100%;
+  }
+  #stage {
+    position: absolute;
+    left: 0; right: 0;
+    padding: 2.5vh 4vw;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+  }
+  #stage.bottom { bottom: 0; justify-content: flex-end; }
+  #stage.top { top: 0; }
+  #stage.center { top: 50%; transform: translateY(-50%); }
+
+  .cap {
+    margin: 0;
+    font-family: var(--font, "Inter", "Segoe UI", system-ui, sans-serif);
+    font-size: var(--size, 42px);
+    font-weight: 650;
+    line-height: 1.25;
+    color: #fff;
+    text-align: center;
+    text-wrap: balance;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+  }
+  .boxed .cap {
+    background: rgba(0, 0, 0, 0.74);
+    padding: 0.18em 0.5em;
+    border-radius: 0.18em;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .shadowed .cap {
+    text-shadow: 0 2px 5px rgba(0,0,0,.95), 0 0 14px rgba(0,0,0,.8), 0 0 2px rgba(0,0,0,1);
+  }
+  .cap.partial { opacity: 0.72; }
+  .cap.old { opacity: 0.6; }
+
+  /* Stage-screen extras: only rendered when asked for via qr=1 / title=1. */
+  #qr {
+    position: absolute;
+    top: 3vh; right: 3vw;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6vh;
+    padding: 1.2vh;
+    background: #fff;
+    border-radius: 1vh;
+    font: 600 clamp(12px, 1.5vh, 22px)/1.2 "Inter", "Segoe UI", system-ui, sans-serif;
+    color: #111;
+    text-align: center;
+  }
+  #qr img { width: clamp(110px, 17vh, 260px); height: auto; display: block; }
+  #qr small { font-weight: 500; color: #444; max-width: clamp(110px, 17vh, 260px); word-break: break-all; }
+  #title {
+    position: absolute;
+    top: 3vh; left: 3vw;
+    right: 30vw;
+    display: none;
+    font: 600 clamp(14px, 2.4vh, 34px)/1.25 "Inter", "Segoe UI", system-ui, sans-serif;
+    color: rgba(255,255,255,.72);
+  }
+  #title b { display: block; color: #fff; font-size: 1.15em; margin-bottom: .3em; }
+
+  /* A quiet, non-intrusive warning so an operator notices a dead feed on the
+     preview monitor without it ever reaching the broadcast in a normal run. */
+  #warn {
+    position: absolute;
+    top: 8px; left: 8px;
+    font: 600 13px/1 ui-monospace, monospace;
+    color: #ffb4b4;
+    background: rgba(120, 0, 0, 0.82);
+    padding: 6px 9px;
+    border-radius: 5px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="warn"></div>
+<div id="title"></div>
+<div id="qr"><span>Seguilo en tu celular</span><img alt="QR para seguir los subtítulos en tu celular"><small></small></div>
+<div id="stage"></div>
+
+<script type="module">
+import { params, wsURL, Socket } from "/static/cotorra.js";
+
+const sessionId = params.get("session");
+const lang = params.get("lang") || "es";
+const maxLines = Math.max(1, parseInt(params.get("lines") || "2", 10));
+const align = params.get("align") || "bottom";
+const showPartials = params.get("partials") !== "0";
+
+const stage = document.getElementById("stage");
+const warn = document.getElementById("warn");
+
+stage.className = align;
+if (params.get("box") !== "0") stage.classList.add("boxed");
+if (params.get("shadow") === "1") stage.classList.add("shadowed");
+document.documentElement.style.setProperty("--size", (params.get("size") || "42") + "px");
+if (params.get("font")) document.documentElement.style.setProperty("--font", params.get("font"));
+
+// A solid background turns the overlay into a stage screen for a projector
+// or a TV — the same page, so what the room reads is exactly what the stream
+// shows.
+const bg = params.get("bg");
+if (bg && /^[0-9a-fA-F]{3,8}$/.test(bg)) {
+  document.documentElement.style.background = `#${bg}`;
+  document.body.style.background = `#${bg}`;
+}
+
+async function stageExtras() {
+  if (!sessionId) return;
+  const lang = params.get("lang") || "es";
+  if (params.get("qr") === "1") {
+    try {
+      const info = await (await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/share?lang=${encodeURIComponent(lang)}`)).json();
+      const box = document.getElementById("qr");
+      box.querySelector("img").src = info.qr;
+      box.querySelector("small").textContent = info.url.replace(/^https?:\/\//, "");
+      box.style.display = "flex";
+    } catch { /* a missing QR must never take the captions down */ }
+  }
+  if (params.get("title") === "1") {
+    try {
+      const s = await (await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)).json();
+      const el = document.getElementById("title");
+      el.replaceChildren();
+      const b = document.createElement("b");
+      b.textContent = s.spec.title;
+      el.append(b, document.createTextNode(s.spec.stage || ""));
+      el.style.display = "block";
+    } catch { /* same */ }
+  }
+}
+stageExtras();
+
+if (!sessionId) {
+  warn.style.display = "block";
+  warn.textContent = "overlay: missing ?session=<id>";
+} else {
+  const finals = [];   // [{seq, text}]
+  let partial = null;
+
+  const render = () => {
+    const rows = finals.slice(-maxLines);
+    stage.replaceChildren(...rows.map((r, i) => {
+      const p = document.createElement("p");
+      p.className = "cap" + (i < rows.length - 1 ? " old" : "");
+      p.textContent = r.text;
+      return p;
+    }));
+    if (showPartials && partial) {
+      const p = document.createElement("p");
+      p.className = "cap partial";
+      p.textContent = partial;
+      stage.append(p);
+      while (stage.childElementCount > maxLines) stage.firstElementChild.remove();
+    }
+  };
+
+  const sock = new Socket(wsURL(`/ws/captions/${encodeURIComponent(sessionId)}?lang=${encodeURIComponent(lang)}`));
+
+  sock.addEventListener("hello", (e) => {
+    finals.length = 0;
+    for (const c of e.detail.backlog.slice(-maxLines)) {
+      if (c.text) finals.push({ seq: c.seq, text: c.text });
+    }
+    render();
+  });
+
+  sock.addEventListener("caption", (e) => {
+    const c = e.detail;
+    if (!c.text) return;
+    if (c.kind === "partial") {
+      partial = c.text;
+    } else {
+      partial = null;
+      const existing = finals.find((f) => f.seq === c.seq);
+      if (existing) existing.text = c.text;
+      else finals.push({ seq: c.seq, text: c.text });
+      finals.splice(0, Math.max(0, finals.length - 8));
+    }
+    render();
+  });
+
+  sock.addEventListener("state", (e) => {
+    const down = e.detail === "closed";
+    warn.style.display = down ? "block" : "none";
+    warn.textContent = down ? `cotorra: reconnecting to ${sessionId}…` : "";
+  });
+}
+</script>
+</body>
+</html>

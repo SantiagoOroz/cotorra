@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cotorra · Subtítulos en vivo</title>
+<meta name="description" content="Elegí una charla y el idioma para ver los subtítulos en vivo.">
+<meta name="color-scheme" content="dark light">
+<link rel="stylesheet" href="/static/cotorra.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦜</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true">🦜</span> Cotorra <small>live captions</small></a>
+  <span class="spacer"></span>
+  <a class="btn" href="/ops">Producción</a>
+  <button id="theme" title="Cambiar tema" aria-label="Cambiar entre tema claro y oscuro">◐</button>
+</header>
+
+<main class="wrap">
+  <h1>Subtítulos en vivo</h1>
+  <p class="lede">
+    Elegí la charla que estás viendo y el idioma en el que querés leerla.
+    No hace falta instalar nada ni crear una cuenta.
+    <span id="langhint"></span>
+  </p>
+
+  <div id="banner"></div>
+  <div class="grid" id="sessions" aria-live="polite" aria-busy="true"></div>
+
+  <footer>
+    <p>
+      <strong>Cotorra</strong> — transcripción y traducción simultánea, open source (Apache&nbsp;2.0).
+      <a href="/docs">API</a> · <a href="/metrics">métricas</a>
+    </p>
+  </footer>
+</main>
+
+<script type="module">
+import { qs, el, initTheme, langLabel, fmtDur } from "/static/cotorra.js";
+
+initTheme();
+
+const STATE_ES = {
+  running: "en vivo", starting: "conectando", degraded: "con problemas",
+  error: "error", idle: "sin iniciar", stopped: "detenida", finished: "terminada",
+};
+
+function card(s) {
+  const spec = s.spec, langs = [...new Set([...spec.targets, spec.source_lang].filter(l => l && l !== "auto"))];
+  const live = ["running", "degraded", "starting"].includes(s.state);
+
+  return el("a", { class: "card", href: `/viewer?session=${encodeURIComponent(spec.id)}&lang=${langs[0] || "es"}` },
+    el("div", { class: "row" },
+      el("span", { class: `dot ${s.state}`, role: "img", "aria-label": STATE_ES[s.state] || s.state }),
+      el("span", { class: "badge" + (live ? " good" : ""), text: STATE_ES[s.state] || s.state }),
+      spec.stage ? el("span", { class: "badge", text: spec.stage }) : null,
+    ),
+    el("h3", { text: spec.title }),
+    el("div", { class: "meta" },
+      el("span", { text: langs.map(langLabel).join(" · ") || "—" }),
+      s.metrics.captions ? el("span", { text: `· ${s.metrics.captions} líneas` }) : null,
+      live && s.metrics.latency_p50_ms ? el("span", { text: `· ${s.metrics.latency_p50_ms} ms` }) : null,
+      s.metrics.audio_seconds ? el("span", { text: `· ${fmtDur(s.metrics.audio_seconds)}` }) : null,
+    ),
+  );
+}
+
+async function refresh() {
+  const host = qs("#sessions");
+  try {
+    const sessions = await (await fetch("/api/sessions")).json();
+    host.setAttribute("aria-busy", "false");
+    if (!sessions.length) {
+      host.replaceChildren(el("p", { class: "empty" },
+        "No hay charlas configuradas todavía. Agregá una en cotorra.yaml o desde el panel de producción."));
+      return;
+    }
+    sessions.sort((a, b) => {
+      const rank = (x) => (["running", "degraded", "starting"].includes(x.state) ? 0 : 1);
+      return rank(a) - rank(b) || a.spec.title.localeCompare(b.spec.title);
+    });
+    host.replaceChildren(...sessions.map(card));
+
+    const demo = sessions.some(s => s.spec.engine === "mock");
+    qs("#banner").replaceChildren(demo ? el("div", { class: "banner demo" },
+      "⚠︎ Modo demo: los subtítulos son de ejemplo, no provienen del audio real. Configurá GEMINI_API_KEY y COTORRA_ENGINE=gemini para transcripción real.") : "");
+  } catch (e) {
+    host.replaceChildren(el("div", { class: "banner error", text: `No se pudo contactar al servidor: ${e.message}` }));
+  }
+}
+
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>
