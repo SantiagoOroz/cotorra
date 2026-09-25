@@ -12,6 +12,8 @@ y barata: **US$0,31 por hora de charla**, medido.
 [![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml)
 
+▶️ **[Mirá el video demo](https://www.youtube.com/watch?v=yGi2xt14FJ0)**
+
 **Español** · [🇬🇧 English](README.en.md)
 
 [Arrancar en 60 segundos](#-arrancar-en-60-segundos) ·
@@ -75,24 +77,9 @@ docker compose up
 Eso es todo. No hay base de datos que migrar, ni cola de mensajes que levantar, ni build de
 frontend. Un contenedor.
 
-> ### ⚠️ Una key gratuita no alcanza para un evento
->
-> El tier gratuito de la API de Gemini da del orden de **15 a 20 requests por día y por
-> modelo**. Una sola charla de una hora necesita entre 400 y 900. Medido, no estimado: la
-> cuota se agota en menos de dos minutos de subtitulado.
->
-> ```
-> Free-tier quota exhausted on gemini-3.5-flash-lite (15 requests/day).
-> Enable billing, or set GEMINI_MODEL to a model whose quota is still free.
-> ```
->
-> Cotorra detecta esto, lo resume en una línea accionable y pone el escenario en rojo en el
-> panel en vez de fallar en silencio. Pero el arreglo está en la consola de facturación, no
-> en el código. **Habilitá billing**: subtitular las 30 charlas cuesta menos de US$10.
->
-> Para probar sin gastar nada, usá `COTORRA_ENGINE=mock` (pipeline completo, texto de
-> ejemplo) o `COTORRA_ENGINE=local` (Whisper + Gemma en tu máquina, sin cuotas).
-> Verificá tu key y tu cuota **antes** del evento con `cotorra doctor --live`.
+> **Para un evento, habilitá billing** (o usá Vertex AI): la key gratuita sirve para probar
+> unos minutos, no para una conferencia. Con billing cuesta **US$0,31 por hora de charla**,
+> medido. `cotorra doctor --live` verifica tu key y tu cuota antes del evento.
 
 
 ### Sin Docker

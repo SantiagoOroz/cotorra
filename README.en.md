@@ -12,6 +12,8 @@ Real-time transcription and translation. Open source, multi-stage, and cheap:
 [![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml)
 
+▶️ **[Watch the demo video](https://www.youtube.com/watch?v=yGi2xt14FJ0)**
+
 🇦🇷 **English** · [Español](README.md)
 
 [60-second start](#-60-second-start) ·
@@ -75,24 +77,9 @@ docker compose up
 That is the whole setup. No database to migrate, no message queue to stand up, no frontend
 build. One container.
 
-> ### ⚠️ A free key is not enough to run an event
->
-> The Gemini API free tier allows on the order of **15 to 20 requests per day per model**.
-> A single one-hour talk needs between 400 and 900. Measured, not guessed: the quota runs
-> out in under two minutes of captioning.
->
-> ```
-> Free-tier quota exhausted on gemini-3.5-flash-lite (15 requests/day).
-> Enable billing, or set GEMINI_MODEL to a model whose quota is still free.
-> ```
->
-> Cotorra detects this, boils it down to one actionable line and turns the stage red on the
-> dashboard instead of failing silently. But the fix is a billing page, not a code change.
-> **Enable billing**: captioning all 30 talks costs under US$10.
->
-> To try it for free use `COTORRA_ENGINE=mock` (full pipeline, scripted text) or
-> `COTORRA_ENGINE=local` (Whisper + Gemma on your own machine, no quotas).
-> Check your key and your quota **before** the event with `cotorra doctor --live`.
+> **For an event, enable billing** (or use Vertex AI): a free key is fine for trying it out
+> for a few minutes, not for a conference. With billing it costs **US$0.31 per hour of
+> talk**, measured. `cotorra doctor --live` checks your key and quota before the event.
 
 
 ### Without Docker

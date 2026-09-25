@@ -42,11 +42,6 @@ HANDOFF.md
 .DS_Store
 Thumbs.db
 
-# Video production files for the submission (voice-over, renders, the cut card).
-submission/video/
-submission/*.m4a
-submission/*.mp3
-submission/*.wav
-submission/*.mp4
-submission/*.mov
+# Hackathon submission material (video script, Devpost draft, renders): local only.
+submission/
 node_modules/
