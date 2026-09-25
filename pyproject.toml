@@ -1,0 +1,62 @@
+[project]
+name = "cotorra"
+version = "0.1.0"
+description = "Open source real-time transcription and translation for conferences, at scale."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Cotorra contributors" }]
+keywords = ["captions", "subtitles", "asr", "translation", "accessibility", "gemini", "conferences"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "httpx>=0.27",
+  "websockets>=12.0",
+  "PyYAML>=6.0",
+  "typer>=0.12",
+  "rich>=13.7",
+  "segno>=1.6",  # QR codes for the stage screen; pure Python, no dependencies
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.0.0"]
+local = ["faster-whisper>=1.0.3"]
+redis = ["redis>=5.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "httpx>=0.27"]
+all = ["google-genai>=1.0.0", "faster-whisper>=1.0.3", "redis>=5.0"]
+
+[project.scripts]
+cotorra = "cotorra.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SantiagoOroz/cotorra"
+Documentation = "https://github.com/SantiagoOroz/cotorra#readme"
+Issues = "https://github.com/SantiagoOroz/cotorra/issues"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]

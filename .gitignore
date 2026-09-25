@@ -1,0 +1,52 @@
+# Secrets — never commit these.
+.env
+*.key
+
+# Runtime state. Transcripts are event output, not source.
+data/transcripts/
+data/sessions.json
+*.jsonl
+*.bak
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Exports produced by `cotorra export`
+*.srt
+*.vtt
+!samples/**/*.srt
+!samples/**/*.vtt
+
+# Downloaded talk recordings. They are large and they belong to the speakers
+# who gave them, so only the synthetic pipeline-test sample ships in the repo.
+samples/*
+!samples/README.md
+!samples/pipeline-test.ogg
+
+# Local handoff notes between work sessions (personal details).
+HANDOFF.md
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Video production files for the submission (voice-over, renders, the cut card).
+submission/video/
+submission/*.m4a
+submission/*.mp3
+submission/*.wav
+submission/*.mp4
+submission/*.mov
+node_modules/
