@@ -1,0 +1,42 @@
+# Nerdearla-specific vocabulary: the event, its places and its people.
+# This is the file the production crew updates the week of the event —
+# speaker names and sponsor names are what generic models get wrong.
+
+Nerdearla
+Sysarmy
+Konex
+Ciudad Cultural Konex
+Buenos Aires
+Argentina
+vibeathon
+Devpost
+Ariel Jolo
+Eduardo Casarero
+Thor Schaeff
+Omar Sanseviero
+Google DeepMind
+Cline
+charla
+escenario
+comunidad
+accesibilidad
+subtitulado
+transcripción
+intérprete
+streaming
+
+# --- oradores y jerga de las charlas usadas en la demo -------------------
+# Esto es exactamente para lo que existe el glosario: los nombres propios y
+# la jerga puntual de cada charla son lo que un modelo generico escribe mal.
+Nate Barbettini
+Abigail Carmio
+Model Context Protocol
+MCP
+ChatGPT
+Anthropic
+OpenAI
+tool calling
+function calling
+agente
+storytelling
+narrativa

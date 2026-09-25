@@ -1,0 +1,55 @@
+# Terms every session gets, on top of its own glossary.
+# One per line. '#' starts a comment.
+# Keep it under ~150 lines total: it rides in every model call.
+
+Kubernetes
+PostgreSQL
+Terraform
+Prometheus
+Grafana
+Ansible
+GraphQL
+gRPC
+WebAssembly
+WebRTC
+Rust
+Golang
+TypeScript
+Django
+FastAPI
+Next.js
+Node.js
+Deno
+Docker
+Podman
+Helm
+Istio
+eBPF
+CI/CD
+DevOps
+SRE
+observability
+serverless
+edge computing
+open source
+pull request
+merge request
+commit
+rollback
+deploy
+latency
+throughput
+LLM
+RAG
+fine-tuning
+embeddings
+inference
+prompt
+token
+Gemini
+Gemma
+Claude
+Whisper
+Hugging Face
+PyTorch
+TensorFlow
