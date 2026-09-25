@@ -12,7 +12,7 @@ Real-time transcription and translation. Open source, multi-stage, and cheap:
 [![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml)
 
-▶️ **[Watch the demo video](https://www.youtube.com/watch?v=yGi2xt14FJ0)**
+▶️ **[Watch the demo video](https://youtu.be/xIqsBC4m3TY)**
 
 🇦🇷 **English** · [Español](README.md)
 

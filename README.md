@@ -12,7 +12,7 @@ y barata: **US$0,31 por hora de charla**, medido.
 [![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
 [![CI](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml)
 
-▶️ **[Mirá el video demo](https://www.youtube.com/watch?v=yGi2xt14FJ0)**
+▶️ **[Mirá el video demo](https://youtu.be/xIqsBC4m3TY)**
 
 **Español** · [🇬🇧 English](README.en.md)
 
