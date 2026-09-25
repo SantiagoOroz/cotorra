@@ -10,6 +10,7 @@ y barata: **US$0,31 por hora de charla**, medido.
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
+[![CI](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoOroz/cotorra/actions/workflows/ci.yml)
 
 **Español** · [🇬🇧 English](README.en.md)
 
