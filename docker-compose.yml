@@ -1,0 +1,81 @@
+# Cotorra — one command to a working event.
+#
+#   cp .env.example .env     # optional: it runs without it
+#   docker compose up
+#
+#   audience   http://localhost:8080/
+#   ops panel  http://localhost:8080/ops
+#   API docs   http://localhost:8080/docs
+#
+# Two demo stages start captioning the bundled sample immediately, so you see
+# the whole thing working before you configure anything.
+#
+# Profiles:
+#   --profile scale   adds Redis, so you can run several gateway replicas
+#   --profile local   adds Ollama for the fully offline engine
+
+services:
+  gateway:
+    build: .
+    image: cotorra:local
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Everything here is optional; these are the defaults spelled out.
+      COTORRA_ENGINE: ${COTORRA_ENGINE:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      WORKER_TOKEN: ${WORKER_TOKEN:-cotorra-dev}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      PARTIALS: ${PARTIALS:-true}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
+      MAX_LOCAL_WORKERS: ${MAX_LOCAL_WORKERS:-12}
+      REDIS_URL: ${REDIS_URL:-}
+      HOST: 0.0.0.0
+      PORT: 8080
+    volumes:
+      # Transcripts and the glossaries the crew edits during the event.
+      - ./data:/app/data
+      # Point a session at /app/media/<file> to caption your own recordings.
+      - ./samples:/app/media:ro
+      # Edit cotorra.yaml and `docker compose restart gateway` to reload.
+      - ./cotorra.yaml:/app/cotorra.yaml:ro
+    # Each stage is an ffmpeg + a worker process. Size this to your host:
+    # roughly 0.2 vCPU and 120 MB per stage with the Gemini engine.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GATEWAY_CPUS:-4}"
+          memory: ${GATEWAY_MEMORY:-4g}
+
+  # --- optional: multi-replica fan-out ------------------------------------
+  # docker compose --profile scale up
+  redis:
+    image: redis:7-alpine
+    profiles: [scale]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # --- optional: fully offline engine --------------------------------------
+  # docker compose --profile local up
+  # then: docker compose exec ollama ollama pull gemma3:4b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [local]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

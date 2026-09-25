@@ -1,0 +1,44 @@
+name: Bug report
+description: Algo no funciona / Something is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué pasó
+      description: Y qué esperabas que pasara.
+    validations: { required: true }
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Salida de `cotorra doctor`
+      render: shell
+    validations: { required: true }
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Motor
+      options: [gemini, local, mock]
+    validations: { required: true }
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Tipo de fuente
+      options: [archivo, RTMP, HLS, SRT, YouTube, micrófono]
+    validations: { required: true }
+
+  - type: input
+    id: stages
+    attributes:
+      label: Escenarios en simultáneo
+      placeholder: "1"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Del gateway. Los workers escriben en el mismo stdout.
+      render: shell

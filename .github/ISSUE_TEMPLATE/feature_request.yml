@@ -1,0 +1,21 @@
+name: Feature request
+description: Algo que tu conferencia necesita / Something your conference needs
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qué problema tenés en tu evento
+      description: Contá el problema real, no la solución que imaginaste. Suele haber una mejor.
+    validations: { required: true }
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Qué tenías en mente
+
+  - type: input
+    id: scale
+    attributes:
+      label: Tamaño de tu evento
+      placeholder: "8 escenarios, 3 días, ~1200 personas"

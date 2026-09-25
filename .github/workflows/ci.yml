@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The whole suite is hermetic: no network, no API key, no GPU. That is a
+    # deliberate constraint, and it is why CI is free and fast.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,gemini]"
+
+      - name: Lint
+        run: ruff check src tests scripts
+
+      - name: Docs must not lie
+        run: python scripts/check_links.py
+
+      - name: Test
+        run: pytest -q
+
+  smoke:
+    # Proves the claim in the README: clone, compose up, captions flowing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start
+        run: docker compose up -d --build
+
+      - name: Wait for healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health | grep -q '"ok":true'; then
+              echo "gateway is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "gateway never became healthy"; docker compose logs; exit 1
+
+      - name: Captions must actually flow
+        run: |
+          sleep 25
+          curl -fsS http://localhost:8080/api/sessions > sessions.json
+          cat sessions.json
+          python - <<'PY'
+          import json, sys
+          sessions = json.load(open("sessions.json"))
+          assert sessions, "no sessions configured"
+          running = [s for s in sessions if s["state"] == "running"]
+          assert len(running) >= 2, f"expected 2 stages captioning in parallel, got {len(running)}"
+          captions = sum(s["metrics"]["captions"] for s in sessions)
+          assert captions > 0, "no captions were produced"
+          print(f"OK: {len(running)} stages running, {captions} captions")
+          PY
+
+      - name: Transcript export must work
+        run: |
+          curl -fsS "http://localhost:8080/api/sessions/stage-red/transcript?lang=es&format=srt&download=false" \
+            | head -20 | tee out.srt
+          grep -q -- '-->' out.srt
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v

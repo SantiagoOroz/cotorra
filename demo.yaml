@@ -1,0 +1,36 @@
+# Demo manifest: two real Nerdearla talks, one per language direction.
+#
+#   python scripts/fetch_samples.py     # downloads both (needs yt-dlp)
+#   MANIFEST=demo.yaml cotorra serve
+#
+# `cotorra.yaml` stays pointed at the bundled synthetic sample so a fresh
+# clone works with zero downloads. This file is what the demo video uses.
+#
+# Talks (from Nerdearla's own YouTube channel):
+#   EN -> ES,PT   Model Context Protocol in Plain English — Nate Barbettini
+#                 https://www.youtube.com/watch?v=iaG9pHMJ3Y4
+#   ES -> EN      Del código a la narrativa — Abigail Carmio
+#                 https://www.youtube.com/watch?v=Z2EHHfyAyC4
+#
+# The recordings are not committed: they belong to the speakers who gave them.
+
+defaults:
+  engine: gemini          # this demo is explicitly about the real engine
+  glossary: nerdearla
+  autostart: true
+  loop: true          # replay forever, so a demo never runs out mid-take
+
+sessions:
+  - id: stage-mcp
+    title: "Model Context Protocol in Plain English — Nate Barbettini"
+    stage: "Escenario Rojo"
+    source: ./samples/nerdearla-mcp-en.ogg
+    source_lang: en
+    targets: [es, pt]
+
+  - id: stage-narrativa
+    title: "Del código a la narrativa — Abigail Carmio"
+    stage: "Escenario Azul"
+    source: ./samples/nerdearla-narrativa-es.ogg
+    source_lang: es
+    targets: [en]

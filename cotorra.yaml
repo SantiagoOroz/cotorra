@@ -1,0 +1,59 @@
+# The event manifest: every stage Cotorra knows about at boot.
+#
+# This is the file the production crew edits. Add one entry per stage, commit
+# it, restart the gateway (or POST to /api/sessions to add one mid-event).
+#
+# source can be:
+#   ./samples/talk.m4a          a file, replayed at real time
+#   https://cdn/stage1.m3u8     the HLS output of your streaming rig
+#   rtmp://ingest.local/live/s1 what OBS or vMix pushes
+#   https://youtu.be/XXXX       a YouTube live stream or VOD (needs yt-dlp)
+#   mic                         the default input of this machine
+#   device:Scarlett 2i2         a named capture device
+
+defaults:
+  # Pinned to mock on purpose. The bundled sample is speech-SHAPED noise, not
+  # speech: sending it to a paid model would burn quota transcribing nothing.
+  # For real talks use demo.yaml, or omit this line and a session will follow
+  # COTORRA_ENGINE from your .env.
+  engine: mock
+  glossary: nerdearla
+  source_lang: auto
+  autostart: true
+
+sessions:
+  # --- the two sessions the MVP requirement asks for, running in parallel ---
+  - id: stage-red
+    title: "Escenario Rojo — Scaling Kubernetes to 10k nodes"
+    stage: "Rojo"
+    source: ./samples/pipeline-test.ogg
+    source_lang: en
+    targets: [es, pt]
+    loop: true
+
+  - id: stage-blue
+    title: "Escenario Azul — Accesibilidad en eventos técnicos"
+    stage: "Azul"
+    source: ./samples/pipeline-test.ogg
+    source_lang: es
+    targets: [en]
+    loop: true
+
+  # --- uncomment and edit for a real event ---------------------------------
+  # - id: konex-main
+  #   title: "Keynote de apertura"
+  #   stage: "Konex Principal"
+  #   source: rtmp://ingest.nerdearla.local/live/main
+  #   source_lang: auto
+  #   targets: [es, en, pt]
+  #   engine: gemini
+  #   autostart: false
+  #
+  # - id: youtube-replay
+  #   title: "Charla de una edición anterior"
+  #   stage: "Archivo"
+  #   source: https://www.youtube.com/watch?v=VIDEO_ID
+  #   source_lang: en
+  #   targets: [es]
+  #   engine: gemini
+  #   autostart: false
